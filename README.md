@@ -1,5 +1,5 @@
 # Windows Event Monitoring
-Simple, Python 3-based multithreaded Windows Event monitoring program.
+Python 3-based multithreaded Windows Event monitoring program.
 
 ## Config File
 The program requires a user supplied json file that provides the program's data and arguments.
@@ -39,6 +39,16 @@ The "Event Descriptions" field name contains user provided descriptions of the e
         }
     }
 }
+```
+
+## Usage
+With a config file structured as above, you can run the monitor with:
+```python
+from monitor_events import Monitor_Thread, Event_Monitor
+
+if __name__ == "__main__":
+    app = Event_Monitor("config.json")
+    app.run()
 ```
 
 ## Dependencies
