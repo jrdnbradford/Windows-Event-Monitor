@@ -1,4 +1,4 @@
-"""Python 3-based multithreaded Windows Event monitoring program."""
+"""Python 3-based multithreaded Windows Event Log monitoring program."""
 
 import time
 import json
@@ -39,7 +39,6 @@ class Event_Monitor:
                         has_dead_thread = True
                         print(f"{thread.name} thread failed.")
                         thread.export_json()
-                        # self._threads = [thread for thread in self._threads if thread.is_alive()]
                 if has_dead_thread: 
                     self._threads = [thread for thread in self._threads if thread.is_alive()]
                 time.sleep(1)
@@ -59,7 +58,7 @@ class Monitor_Thread(threading.Thread):
     Subclass of Thread that processes and holds data from Windows Event Logs.
     """
     def __init__(self, server, log_type, event_IDs):
-        threading.Thread.__init__(self, args= [server, log_type, event_IDs])
+        threading.Thread.__init__(self, target = self.monitor_events, args= [server, log_type, event_IDs])
         now = datetime.now()
         self._start_timestamp = now.timestamp()
         self._start_date = now.date()
@@ -81,19 +80,15 @@ class Monitor_Thread(threading.Thread):
                         if int(event) in self._event_IDs
             } 
     
-    def run(self):
-        """Overwritten method that sets target for Monitor_Thread."""
-        self.monitor_events(self._server_name, self._log_type, self._event_IDs)
-    
     def event_fits_criteria(self, event, event_IDs, start_time):
-        """Returns boolean."""
         return event.EventID in event_IDs and event.TimeGenerated > start_time  
 
     def monitor_events(self, server, log_type, event_IDs):
         """
-        Monitors local or remote machine's specified logs for specified Windows 
-        Events. This configuration is specified by the json file provided via
-        the config_file parameter when initializing the Event_Monitor class.
+        Monitors local or remote machine's logs for Windows Events. 
+        This configuration is specified by the json file provided via
+        the config_file parameter when initializing the Event_Monitor
+        class.
         """
         try:
             handle = win32evtlog.OpenEventLog(server, log_type)
