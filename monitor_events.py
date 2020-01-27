@@ -12,43 +12,73 @@ import win32evtlog
 
 class Event_Monitor:
     """
-    Class is an application that monitors Windows Event Logs specified by
-    parameter config_file (string).
+    Class is an application that monitors Windows Event Logs.
+
+    Parameter config_file (string): File containing necessary data
+
+    Parameter retry_delta (datetime.timedelta): Kwarg that sets how
+    often the program should attempt to respawn threads. Defaults to
+    5 minutes.
     """
-    def __init__(self, config_file):
+    def __init__(self, config_file, retry_delta = timedelta(minutes = 5)):
         try:
             with open(config_file, "r") as config:
                 data = json.loads(config.read())
         except:
-            print("Config file not found in directory.\nExiting program.", )
+            print("Config file not found.\nExiting program.", )
 
-        self._threads = []
+        self._active_threads = []
         for server in data["Servers"]:
             for log_type in data["Servers"][server]:
                 event_IDs = data["Servers"][server][log_type]
                 thread = Monitor_Thread(server, log_type, event_IDs)
-                self._threads.append(thread)
+                self._active_threads.append(thread)
+        self._threads_to_restart = []
+        self._retry_delta = retry_delta
  
     def run(self):
-        for thread in self._threads: thread.start()
+        """
+        Main thread of execution. run() ensures that spawned Monitor_Threads
+        stay alive. If any are found dead, it attempts to start a new thread 
+        with the dead Monitor_Thread's data in case the problem is temporary.
+
+        Stoppable with Ctrl+C.
+        """
+        for t in self._active_threads: t.start()
         try: # Runs concurrently with threads
             while True:
-                has_dead_thread = False
-                for thread in self._threads: # Check for thread failure
-                    if not thread.is_alive(): # Cleanup
-                        has_dead_thread = True
-                        print(f"{thread.name} thread failed.")
-                        thread.export_json()
-                if has_dead_thread: 
-                    self._threads = [thread for thread in self._threads if thread.is_alive()]
+                for t in self._active_threads:
+                    if not t.is_alive():
+                        self._threads_to_restart.append(t.respawn_thread(self._retry_delta))                  
+                        t.failures += 1
+                        t.acknowledged_failure = True
+                # Don't remove threads that died AFTER iteration
+                self._active_threads = [t for t in self._active_threads if not t.acknowledged_failure]
+                
+                for t in self._threads_to_restart: 
+                    if not t._failure_printed_to_console:
+                        print(f"{t.name} failed. Will attempt restart in {self._retry_delta}.")
+                        t._failure_printed_to_console = True
+                    
+                    if t.restart_time < datetime.now():
+                        print(f"Attempting to restart {t.name}.")
+                        t._failure_printed_to_console = False
+                        t.restart_time = None
+                        t.start()
+                        self._active_threads.append(t)
+                # Remove threads that have respawned
+                self._threads_to_restart = [t for t in self._threads_to_restart if t.restart_time != None]
                 time.sleep(1)
+
         except KeyboardInterrupt: 
             print("\nKeyboard interrupt.")
         except Exception as err:
             print(err)
         finally: # Save necessary data before exit
-            for thread in self._threads:
-                thread.export_json()
+            for t in self._active_threads:
+                t.export_json()
+            for t in self._threads_to_restart:
+                t.export_json()
             print("Exiting program.")
             sys.exit(0)
 
@@ -58,7 +88,7 @@ class Monitor_Thread(threading.Thread):
     Subclass of Thread that processes and holds data from Windows Event Logs.
     """
     def __init__(self, server, log_type, event_IDs):
-        threading.Thread.__init__(self, target = self.monitor_events, args= [server, log_type, event_IDs])
+        threading.Thread.__init__(self, target = self.monitor_events, args = [server, log_type, event_IDs])
         now = datetime.now()
         self._start_timestamp = now.timestamp()
         self._start_date = now.date()
@@ -70,6 +100,10 @@ class Monitor_Thread(threading.Thread):
         self._total_processed_events = 0
         self.daemon = True
         self.name = f"{self._log_type}_{self._server_name}"
+        self._failure_printed_to_console = False
+        self.failures = 0
+        self.restart_time = None
+        self.acknowledged_failure = False
 
         with open("config.json", "r") as config:
             config_data_dict = json.loads(config.read())
@@ -83,6 +117,29 @@ class Monitor_Thread(threading.Thread):
     def event_fits_criteria(self, event, event_IDs, start_time):
         return event.EventID in event_IDs and event.TimeGenerated > start_time  
 
+    def respawn_thread(self, delta):
+        """
+        Copies relevant data from dead thread and adds it to a new one.
+
+        Parameter delta (datetime.timedelta): timedelta that sets how long
+        from now to respawn the thread.
+        
+        Returns thread.
+        """        
+        server = self._server_name
+        log_type = self._log_type
+        event_IDs = self._event_IDs
+        new_thread = Monitor_Thread(server, log_type, event_IDs)
+
+        new_thread._start_timestamp = self._start_timestamp
+        new_thread._start_date = self._start_date
+        new_thread._event_occurrence = self._event_occurrence
+        new_thread._times_event_generated = self._times_event_generated
+        new_thread._total_processed_events = self._total_processed_events
+        new_thread.failures = self.failures
+        new_thread.restart_time = datetime.now() + delta
+        return new_thread
+
     def monitor_events(self, server, log_type, event_IDs):
         """
         Monitors local or remote machine's logs for Windows Events. 
@@ -93,18 +150,23 @@ class Monitor_Thread(threading.Thread):
         try:
             handle = win32evtlog.OpenEventLog(server, log_type)
             # total = win32evtlog.GetNumberOfEventLogRecords(handle)
-        except:
+        except Exception as err:
+            print(err)
+            self.failures += 1
             return
         
         print(f"Thread that monitors {log_type} logs on {server} started successfully.")
         flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         start = datetime.now()
+        # Perhaps this should be initialized in Event_Monitor
         delta = timedelta(hours = 6) # Sets how often thread data is exported
         
         while True:
             try:
                 events = win32evtlog.ReadEventLog(handle, flags, 0)  
-            except: 
+            except Exception as err:
+                print(err)
+                self.failures += 1
                 return
             
             events_to_process = [event for event in events if self.event_fits_criteria(event, event_IDs, start)]
@@ -197,6 +259,6 @@ class Monitor_Thread(threading.Thread):
             with open(event_log_json_file, "w") as f:
                 data = json.dumps(data_dict, indent = 4)
                 f.write(data)
-            print(f"Exported {self._log_type} logs for {self._server_name}.")
+            print(f"Exported {self._server_name} {self._log_type} logs.")
         except PermissionError as err:
             print(err) 
