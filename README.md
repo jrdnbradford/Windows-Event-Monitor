@@ -44,10 +44,10 @@ The "Event Descriptions" field name contains user provided descriptions of the e
 ## Usage
 With a config file structured as above, you can run the monitor with:
 ```python
-from monitor_events import Monitor_Thread, Event_Monitor
+from windowseventmonitor import event_monitor
 
 if __name__ == "__main__":
-    app = Event_Monitor("config.json")
+    app = event_monitor.Event_Monitor("config.json")
     app.run()
 ```
 
