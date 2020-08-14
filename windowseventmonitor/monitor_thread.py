@@ -19,28 +19,28 @@ class Monitor_Thread(threading.Thread):
     Parameter event_IDs (list): Specifies event IDs to monitor in log_type, as integers.
     """
     def __init__(self, server, log_type, event_IDs):
-        threading.Thread.__init__(self, target = self.monitor_events, args = [server, log_type, event_IDs])
+        super().__init__(target = self.monitor_events, args = [server, log_type, event_IDs])
         now = datetime.now()
-        self._initial_start_timestamp = now.timestamp()
-        self._latest_start = now
-        self._start_date = now.date()
-        self._server_name = server
-        self._log_type = log_type
-        self._event_IDs = event_IDs
-        self._event_occurrence = defaultdict(int)
-        self._times_event_generated = defaultdict(list)
-        self._total_processed_events = 0
+        self.initial_start_timestamp = now.timestamp()
+        self.latest_start = now
+        self.start_date = now.date()
+        self.server_name = server
+        self.log_type = log_type
+        self.event_IDs = event_IDs
+        self.event_occurrence = defaultdict(int)
+        self.times_event_generated = defaultdict(list)
+        self.total_processed_events = 0
         self.daemon = True
-        self.name = f"{self._log_type}_{self._server_name}"
-        self._failure_printed_to_console = False
-        self._failures = 0
-        self._restart_time = None
-        self._acknowledged_failure = False
+        self.name = f"{self.log_type}_{self.server_name}"
+        self.failure_printed_to_console = False
+        self.failures = 0
+        self.restart_time = None
+        self.acknowledged_failure = False
 
         with open("config.json", "r") as config:
             config_data_dict = json.loads(config.read())
-            event_descriptions = config_data_dict["Event Descriptions"][self._log_type]
-            self._event_descriptions = { # Dictionary comprehension
+            event_descriptions = config_data_dict["Event Descriptions"][self.log_type]
+            self.event_descriptions = { # Dictionary comprehension
                 int(event): event_descriptions[event] # Event IDs in json are strings
                     for event in event_descriptions
                         if int(event) in self.get_event_IDs()
@@ -48,7 +48,7 @@ class Monitor_Thread(threading.Thread):
 
 
     def event_fits_criteria(self, event):
-        return event.EventID in self.get_event_IDs() and event.TimeGenerated > self._latest_start
+        return event.EventID in self.get_event_IDs() and event.TimeGenerated > self.latest_start
 
 
     def respawn_thread(self, delta):
@@ -60,17 +60,17 @@ class Monitor_Thread(threading.Thread):
 
         Returns thread.
         """
-        new_thread = Monitor_Thread(self._server_name, self._log_type, self._event_IDs)
+        new_thread = Monitor_Thread(self.server_name, self.log_type, self.event_IDs)
 
         now = datetime.now()
-        new_thread._latest_start = now
-        new_thread._initial_start_timestamp = self._initial_start_timestamp
-        new_thread._start_date = self._start_date
-        new_thread._event_occurrence = self._event_occurrence
-        new_thread._times_event_generated = self._times_event_generated
-        new_thread._total_processed_events = self._total_processed_events
-        new_thread._failures = self._failures
-        new_thread._restart_time = now + delta
+        new_thread.latest_start = now
+        new_thread.initial_start_timestamp = self.initial_start_timestamp
+        new_thread.start_date = self.start_date
+        new_thread.event_occurrence = self.event_occurrence
+        new_thread.times_event_generated = self.times_event_generated
+        new_thread.total_processed_events = self.total_processed_events
+        new_thread.failures = self.failures
+        new_thread.restart_time = now + delta
         self = None
 
         return new_thread
@@ -118,45 +118,45 @@ class Monitor_Thread(threading.Thread):
         Increments event's occurrence and total processed
         events, adds log generation timestamp to list.
         """
-        self._event_occurrence[event_obj.EventID] += 1
-        self._times_event_generated[event_obj.EventID].append(event_obj.TimeGenerated.timestamp())
-        self._total_processed_events += 1
+        self.event_occurrence[event_obj.EventID] += 1
+        self.times_event_generated[event_obj.EventID].append(event_obj.TimeGenerated.timestamp())
+        self.total_processed_events += 1
 
 
     def add_thread_failure(self):
-        self._failures += 1
+        self.failures += 1
 
 
     def get_failure_total(self):
-        return self._failures
+        return self.failures
 
 
     def get_event_IDs(self):
-        return self._event_IDs
+        return self.event_IDs
 
 
     def get_log_type(self):
-        return self._log_type
+        return self.log_type
 
 
     def get_total_event_occurrences(self, event_ID):
-        return self._event_occurrence[event_ID]
+        return self.event_occurrence[event_ID]
 
 
     def get_event_occurrence_times(self, event_ID):
-        return self._times_event_generated.get(event_ID)
+        return self.times_event_generated.get(event_ID)
 
 
     def get_total_processed_events(self):
-        return self._total_processed_events
+        return self.total_processed_events
 
 
     def get_event_description(self, event_ID):
-        return self._event_descriptions.get(event_ID)
+        return self.event_descriptions.get(event_ID)
 
 
     def get_server_name(self):
-        return self._server_name
+        return self.server_name
 
 
     def get_thread_name(self):
@@ -164,13 +164,13 @@ class Monitor_Thread(threading.Thread):
 
 
     def reset_all_event_occurrences(self):
-        self._event_occurrence = defaultdict(int)
+        self.event_occurrence = defaultdict(int)
 
 
     def reset_all_event_times_of_occurrence(self):
-        self._times_event_generated = defaultdict(list)
+        self.times_event_generated = defaultdict(list)
 
 
     def reset_all_processed_events(self):
-        self._total_processed_events = 0
+        self.total_processed_events = 0
 

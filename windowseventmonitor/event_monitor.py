@@ -27,18 +27,18 @@ class Event_Monitor:
         except:
             raise FileNotFoundError("Config file not found")
 
-        self._app_start = datetime.now()
-        self._active_threads = []
-        self._servers = set()
+        self.app_start = datetime.now()
+        self.active_threads = []
+        self.servers = set()
         for server in data["Servers"]:
-            self._servers.add(server)
+            self.servers.add(server)
             for log_type in data["Servers"][server]:
                 event_IDs = data["Servers"][server][log_type]
                 thread = monitor_thread.Monitor_Thread(server, log_type, event_IDs)
-                self._active_threads.append(thread)
-        self._threads_to_restart = []
-        self._retry_delta = retry_delta
-        self._export_delta = export_delta
+                self.active_threads.append(thread)
+        self.threads_to_restart = []
+        self.retry_delta = retry_delta
+        self.export_delta = export_delta
 
 
     def run(self):
@@ -57,19 +57,19 @@ class Event_Monitor:
                     if not thread.is_alive():
                         self.get_dead_threads().append(thread.respawn_thread(self.get_retry_delta()))
                         thread.add_thread_failure()
-                        thread._acknowledged_failure = True
+                        thread.acknowledged_failure = True
                 # Don't remove threads that died AFTER iteration
                 self.remove_dead_threads()
 
                 for thread in self.get_dead_threads():
-                    if not thread._failure_printed_to_console:
+                    if not thread.failure_printed_to_console:
                         print(f"{thread.name} failed. Will attempt restart in {self.get_retry_delta()}")
-                        thread._failure_printed_to_console = True
+                        thread.failure_printed_to_console = True
 
-                    if thread._restart_time < datetime.now():
+                    if thread.restart_time < datetime.now():
                         print(f"Attempting to restart {thread.name}")
-                        thread._failure_printed_to_console = False
-                        thread._restart_time = None
+                        thread.failure_printed_to_console = False
+                        thread.restart_time = None
                         thread.start()
                         self.get_active_threads().append(thread)
                 # Remove threads that have respawned
@@ -108,7 +108,7 @@ class Event_Monitor:
         # Thread data
         for thread in self.get_all_threads():
             data_dict["Monitor App"]["Event Logs"][thread.get_server_name()][thread.get_log_type()] = {
-                "Thread Start Timestamp": thread._latest_start.timestamp(),
+                "Thread Start Timestamp": thread.latest_start.timestamp(),
                 "Total Processed Events": thread.get_total_processed_events(),
                 "Total Thread Failures": thread.get_failure_total(),
                 "Event IDs": { # Value built below
@@ -121,7 +121,7 @@ class Event_Monitor:
             }
             event_ID_key = data_dict["Monitor App"]["Event Logs"][thread.get_server_name()][thread.get_log_type()]["Event IDs"]
             try: # Build Event IDs dictionary value for data_dict
-                for event_ID in thread._event_IDs:
+                for event_ID in thread.event_IDs:
                     event_ID_key[event_ID] = {
                         "Total": thread.get_total_event_occurrences(event_ID),
                         "Description": thread.get_event_description(event_ID),
@@ -145,32 +145,32 @@ class Event_Monitor:
 
 
     def get_active_threads(self):
-        return self._active_threads
+        return self.active_threads
 
 
     def get_all_threads(self):
-        return self._active_threads + self._threads_to_restart
+        return self.active_threads + self.threads_to_restart
 
 
     def get_dead_threads(self):
-        return self._threads_to_restart
+        return self.threads_to_restart
 
 
     def get_export_delta(self):
-        return self._export_delta
+        return self.export_delta
 
 
     def get_retry_delta(self):
-        return self._retry_delta
+        return self.retry_delta
 
 
     def get_servers(self):
-        return self._servers
+        return self.servers
 
 
     def remove_respawned_threads(self):
-        self._threads_to_restart = [thread for thread in self.get_dead_threads() if thread._restart_time != None]
+        self.threads_to_restart = [thread for thread in self.get_dead_threads() if thread.restart_time != None]
 
 
     def remove_dead_threads(self):
-        self._active_threads = [thread for thread in self.get_active_threads() if not thread._acknowledged_failure]
+        self.active_threads = [thread for thread in self.get_active_threads() if not thread.acknowledged_failure]
